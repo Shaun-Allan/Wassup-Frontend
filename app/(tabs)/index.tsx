@@ -1,75 +1,97 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import axios from 'axios';
+import { useRouter } from "expo-router";
+import React, { useContext, useEffect } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Appbar, List, Searchbar } from 'react-native-paper';
+import { UserContext } from '../UserContext';
 
-import { HelloWave } from '@/components/HelloWave';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
+
+
 
 export default function HomeScreen() {
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const { user } = useContext(UserContext);
+  const [friends, setFriends] = React.useState<any>([]);
+  const router = useRouter();
+
+  useEffect(() => {
+    const fetchData = async () => {
+      const res = await axios.get(`http://192.168.1.7:5002/users/${user.id}/friends`);
+      if (res.status === 200) {
+        setFriends(res.data);
+        console.log("Friends fetched successfully");
+      } else {
+        console.log("Failed to fetch friends");
+      }
+    };
+    fetchData();
+  }, [user.id]);
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
+    <>
+      <Appbar.Header>
+        <Appbar.Content title="Wassup" />
+      </Appbar.Header>
+      <View style={styles.container}>
+        <Searchbar
+          placeholder="Search"
+          onChangeText={setSearchQuery}
+          value={searchQuery}
         />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
+        {friends.map((item: any) => (
+          <Pressable
+            key={item.id}
+            onPress={() => router.push({
+              pathname: '/dm',
+              params: { friend: JSON.stringify({ id: item.id, name: item.name, email: item.email }), },
             })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
-  );
+          >
+        <List.Item
+          style={styles.listItem}
+          titleStyle={styles.listItemText}
+          title={item.name}
+          right={props => (
+            <List.Icon {...props} icon="chevron-right" />
+          )
+          }
+        />
+      </Pressable>
+        ))}
+    </View >
+    </>
+  )
 }
 
+
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  container: {
+    flex: 1,
+    padding: 8,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  searchbar: {
+    marginBottom: 10,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  listItem: {
+    padding: 16,
+    borderRadius: 10,
+    backgroundColor: 'white',  // Important for shadows to show
+    marginTop: 12,
+
+    // Android elevation
+    elevation: 3,
+
+    // iOS shadow
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+
+    // Border
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  listItemText: {
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
