@@ -17,48 +17,69 @@ import {
 import { Appbar, Avatar, TextInput } from 'react-native-paper';
 import { UserContext } from '../context/UserContext';
 
-export default function DMScreen() {
-    const { friend } = useLocalSearchParams();
+export default function GroupChatScreen() {
+    const { group } = useLocalSearchParams();
     const router = useRouter();
     const { user } = useContext(UserContext);
     const [messages, setMessages] = useState<any[]>([]);
     const [text, setText] = useState('');
+    const [senderNames, setSenderNames] = useState<{ [key: string]: string }>({});
     const [isTyping, setIsTyping] = useState(false);
     const [isOnline, setIsOnline] = useState(true);
     const ws = useRef<WebSocket | null>(null);
     const flatListRef = useRef<FlatList>(null);
     const fadeAnim = useRef(new Animated.Value(0)).current;
 
-    let parsedUser: { id: string; name: string; email: string } | null = null;
+    let parsedGroup: { id: string; name: string; description?: string; memberCount?: number } | null = null;
 
     try {
-        parsedUser = typeof friend === 'string' ? JSON.parse(friend) : null;
+        parsedGroup = typeof group === 'string' ? JSON.parse(group) : null;
     } catch (e) {
-        console.error('Invalid user JSON:', e);
+        console.error('Invalid group JSON:', e);
     }
 
-    const fetchMessages = async () => {
+    const fetchGroupMessages = async () => {
         try {
-            const res = await axios.get(`http://192.168.1.7:5003/history?user1=${user.id}&user2=${parsedUser?.id}`);
+            const res = await axios.get(`http://192.168.1.7:5005/group/history?group_id=${parsedGroup?.id}`);
             setMessages(res.data);
-            
+
             // Fade in animation
             Animated.timing(fadeAnim, {
                 toValue: 1,
                 duration: 300,
                 useNativeDriver: true,
             }).start();
+
+            res.data.forEach((msg: any) => {
+                if (msg.sender !== user.id) {
+                    getSenderName(msg.sender);
+                }
+            });
         } catch (error) {
-            console.error('Error fetching messages:', error);
+            console.error('Error fetching group messages:', error);
+        }
+    };
+
+    const getSenderName = async (userId: string) => {
+        if (senderNames[userId]) return senderNames[userId];
+
+        try {
+            const res = await axios.get(`http://192.168.1.7:5006/get-name?user_id=${userId}`);
+            const name = res.data.name || userId;
+            setSenderNames((prev) => ({ ...prev, [userId]: name }));
+            return name;
+        } catch (err) {
+            console.error(`Failed to fetch name for ${userId}`, err);
+            return userId;
         }
     };
 
     const sendMessage = () => {
         if (!text.trim()) return;
-        
+
         const msg = {
             sender: user.id,
-            receiver: parsedUser?.id,
+            group_id: parsedGroup?.id,
             content: text.trim(),
         };
 
@@ -74,17 +95,23 @@ export default function DMScreen() {
     };
 
     useEffect(() => {
-        fetchMessages();
-        ws.current = new WebSocket(`ws://192.168.1.7:5003/ws?user_id=${user?.id}`);
+        fetchGroupMessages();
 
-        ws.current.onmessage = (e) => {
+        ws.current = new WebSocket(`ws://192.168.1.7:5005/group/ws?user_id=${user?.id}&group_id=${parsedGroup?.id}`);
+
+        ws.current.onmessage = async (e) => {
             const incoming = JSON.parse(e.data);
-            setMessages((prev) => [...prev, incoming]);
-            
-            // Auto-scroll to bottom when receiving messages
-            setTimeout(() => {
-                flatListRef.current?.scrollToEnd({ animated: true });
-            }, 100);
+            if (incoming.group_id === parsedGroup?.id) {
+                setMessages((prev) => [...prev, incoming]);
+                if (incoming.sender !== user.id) {
+                    await getSenderName(incoming.sender);
+                }
+                
+                // Auto-scroll to bottom when receiving messages
+                setTimeout(() => {
+                    flatListRef.current?.scrollToEnd({ animated: true });
+                }, 100);
+            }
         };
 
         ws.current.onopen = () => {
@@ -119,11 +146,26 @@ export default function DMScreen() {
             .substring(0, 2);
     };
 
+    const getAvatarColor = (name: string) => {
+        const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
+        const index = name.charCodeAt(0) % colors.length;
+        return colors[index];
+    };
+
+    const getMemberCountText = () => {
+        const count = parsedGroup?.memberCount || 0;
+        if (count === 1) return '1 member';
+        return `${count} members`;
+    };
+
     const renderMessage = ({ item, index }: { item: any; index: number }) => {
         const isOutgoing = item.sender === user.id;
         const showTimestamp = index === 0 || 
             (messages[index - 1] && 
              new Date(item.timestamp).getTime() - new Date(messages[index - 1].timestamp).getTime() > 300000); // 5 minutes
+
+        const senderName = senderNames[item.sender] || item.sender;
+        const showSenderName = !isOutgoing && (index === 0 || messages[index - 1]?.sender !== item.sender);
 
         return (
             <View style={styles.messageContainer}>
@@ -138,6 +180,11 @@ export default function DMScreen() {
                         isOutgoing ? styles.outgoingMessage : styles.incomingMessage,
                     ]}
                 >
+                    {showSenderName && (
+                        <Text style={styles.senderName}>
+                            {senderName}
+                        </Text>
+                    )}
                     <Text style={isOutgoing ? styles.outgoingText : styles.incomingText}>
                         {item.content}
                     </Text>
@@ -158,10 +205,7 @@ export default function DMScreen() {
     return (
         <>
             <StatusBar barStyle="light-content" backgroundColor="#1a1a2e" />
-            <LinearGradient
-                colors={['#1a1a2e', '#16213e']}
-                // style={styles.headerGradient}
-            >
+            <LinearGradient colors={['#1a1a2e', '#16213e']}>
                 <Appbar.Header style={styles.header}>
                     <Appbar.BackAction 
                         onPress={() => router.back()} 
@@ -170,28 +214,28 @@ export default function DMScreen() {
                     <View style={styles.headerContent}>
                         <Avatar.Text
                             size={36}
-                            label={getInitials(parsedUser?.name || 'U')}
-                            style={styles.headerAvatar}
+                            label={getInitials(parsedGroup?.name || 'G')}
+                            style={[styles.headerAvatar, { backgroundColor: getAvatarColor(parsedGroup?.name || 'Group') }]}
                             labelStyle={styles.headerAvatarLabel}
                         />
                         <View style={styles.headerInfo}>
                             <Text style={styles.headerTitle}>
-                                {parsedUser?.name ?? 'Unknown User'}
+                                {parsedGroup?.name ?? 'Group Chat'}
                             </Text>
                             <Text style={styles.headerStatus}>
-                                {isOnline ? 'Online' : 'Offline'}
+                                {isOnline ? getMemberCountText() : 'Offline'}
                             </Text>
                         </View>
                     </View>
                     <Appbar.Action 
-                        icon="phone" 
+                        icon="account-group" 
                         iconColor="#ffffff"
-                        onPress={() => {/* Call functionality */}}
+                        onPress={() => {/* Group info functionality */}}
                     />
                     <Appbar.Action 
-                        icon="video" 
+                        icon="dots-vertical" 
                         iconColor="#ffffff"
-                        onPress={() => {/* Video call functionality */}}
+                        onPress={() => {/* Menu functionality */}}
                     />
                 </Appbar.Header>
             </LinearGradient>
@@ -222,7 +266,7 @@ export default function DMScreen() {
                         {isTyping && (
                             <View style={styles.typingIndicator}>
                                 <Text style={styles.typingText}>
-                                    {parsedUser?.name} is typing...
+                                    Someone is typing...
                                 </Text>
                             </View>
                         )}
@@ -265,9 +309,6 @@ export default function DMScreen() {
 }
 
 const styles = StyleSheet.create({
-    headerGradient: {
-        paddingTop: StatusBar.currentHeight || 0,
-    },
     header: {
         backgroundColor: 'transparent',
         elevation: 0,
@@ -280,7 +321,6 @@ const styles = StyleSheet.create({
         marginLeft: 8,
     },
     headerAvatar: {
-        backgroundColor: '#4dabf7',
         marginRight: 12,
     },
     headerAvatarLabel: {
@@ -361,6 +401,12 @@ const styles = StyleSheet.create({
         backgroundColor: '#4dabf7',
         alignSelf: 'flex-end',
         borderBottomRightRadius: 6,
+    },
+    senderName: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#4dabf7',
+        marginBottom: 4,
     },
     incomingText: {
         color: '#1a1a2e',

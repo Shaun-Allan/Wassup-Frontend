@@ -3,7 +3,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { PaperProvider } from 'react-native-paper';
 import 'react-native-reanimated';
-import { UserProvider } from './UserContext';
+import { UserProvider } from '../context/UserContext';
 
 export default function RootLayout() {
   const [loaded] = useFonts({
@@ -23,6 +23,8 @@ export default function RootLayout() {
           <Stack.Screen name="+not-found" />
           <Stack.Screen name="login" options={{ headerShown: false }} />
           <Stack.Screen name="dm" options={{ headerShown: false }} />
+          <Stack.Screen name="create-group" options={{ headerShown: false }} />
+          <Stack.Screen name="groupchat" options={{ headerShown: false }} />
         </Stack>
         <StatusBar style="auto" />
       </UserProvider>
